@@ -41,6 +41,9 @@
     <div class="issue-pills">
       <nz-tag nzColor="error">{{ totalErrors }} 处出律</nz-tag>
       <nz-tag nzColor="warning">{{ totalWarnings }} 处待核</nz-tag>
+      @if (pendingCount > 0) {
+        <nz-tag nzColor="orange" nz-tooltip [nzTooltipTitle]="'来源：' + pendingSources.join('、')">{{ pendingCount }} 字合流待复核</nz-tag>
+      }
       <nz-tag>{{ store.differences().length }} 处异文</nz-tag>
     </div>
   </section>
@@ -106,8 +109,9 @@
                       [class.is-variant]="cell.status === 'variant'"
                       [class.is-error]="cell.status === 'error'"
                       [class.is-unknown]="cell.status === 'unknown'"
+                      [class.is-pending]="cell.mark.pendingReview"
                       nz-tooltip
-                      [nzTooltipTitle]="cell.message"
+                      [nzTooltipTitle]="cell.mark.pendingReview ? ('待复核 · 来源：' + (cell.mark.reviewSource || '未注明')) : cell.message"
                       (click)="store.selectCell(line.index, cell.position)"
                     >
                       <span class="expected">{{ cell.expected }}／{{ cell.actual }}</span>
@@ -115,6 +119,7 @@
                       <span class="mark-row">
                         @if (cell.mark.rhyme) { <em>{{ cell.mark.rhyme }}</em> }
                         @if (cell.mark.pauseAfter) { <i>顿</i> }
+                        @if (cell.mark.pendingReview) { <i class="pending-flag">核</i> }
                       </span>
                     </button>
                   }
@@ -146,6 +151,16 @@
                 <p>{{ cell.message }}</p>
               </div>
             </div>
+            @if (cell.mark.pendingReview) {
+              <nz-alert
+                class="pending-alert"
+                nzType="warning"
+                nzShowIcon
+                [nzMessage]="'合流待复核 · 来源：' + (cell.mark.reviewSource || '未注明')"
+                nzDescription="该字因正文改字或候选标注转待复核，确认无误后可清除标记。"
+              ></nz-alert>
+              <button nz-button nzSize="small" class="confirm-review-btn" (click)="store.clearReview(store.selectedLine(), cell.position)">确认此字</button>
+            }
             <label class="field-label">平仄</label>
             <div class="tone-buttons">
               <button nz-button [nzType]="cell.mark.tone === '平' ? 'primary' : 'default'" (click)="setTone('平')">平</button>
@@ -253,6 +268,9 @@
           <button nz-button (click)="store.previousDifference()">上一处异文</button>
           <button nz-button nzType="primary" (click)="store.nextDifference()">下一处异文</button>
           <nz-tag nzColor="error">{{ store.differences().length }} 处差异</nz-tag>
+          @if (pendingCount > 0) {
+            <nz-tag nzColor="orange" nz-tooltip [nzTooltipTitle]="'来源：' + pendingSources.join('、')">{{ pendingCount }} 字待复核</nz-tag>
+          }
         </div>
         @if (store.baselineVersion(); as baseline) {
           <div class="compare-headings">
@@ -265,11 +283,15 @@
                 class="diff-char"
                 [class.is-changed]="item.changed"
                 [class.is-current]="item.index === store.currentDiffIndex()"
+                [class.is-pending]="store.pendingFlatMap().has(item.index)"
                 [class.has-left]="!item.left"
                 [class.has-right]="!item.right"
+                nz-tooltip
+                [nzTooltipTitle]="store.pendingFlatMap().has(item.index) ? '合流待复核' : null"
               >
                 <i>{{ item.left || '□' }}</i>
                 <b>{{ item.right || '□' }}</b>
+                @if (store.pendingFlatMap().has(item.index)) { <em class="diff-pending">核</em> }
               </span>
             }
           </div>
@@ -279,6 +301,146 @@
         } @else {
           <nz-empty nzNotFoundContent="请选择一份异文底本"></nz-empty>
         }
+      </section>
+    </nz-tab>
+
+    <nz-tab nzTitle="宋刻本合流">
+      <section class="merge-layout">
+        <aside class="surface merge-input-panel">
+          <div class="section-title compact">
+            <div><span class="overline">COLLATION BATCH</span><h2>校勘员批次</h2></div>
+          </div>
+          <p class="merge-hint">粘贴校勘员从宋刻本带回的逐字标注 JSON。版本快照只存来源正文；平仄、韵组、停顿、对仗先入候选，选定来源前不覆盖当前稿。</p>
+          <textarea
+            nz-input
+            class="batch-textarea"
+            rows="14"
+            placeholder='{"source":"宋蜀刻本","lines":["春眠不觉晓，"],"marks":[{"line":0,"position":0,"tone":"平"}]}'
+            [ngModel]="batchInput"
+            (ngModelChange)="batchInput = $event"
+          ></textarea>
+          @if (store.mergeError(); as error) {
+            <nz-alert class="merge-alert" nzType="error" nzShowIcon [nzMessage]="error" nzDescription="批次已保留在输入框，修正后重试即可；已确认的选择不会丢失。"></nz-alert>
+          }
+          <div class="merge-actions">
+            <button nz-button (click)="loadSampleBatch()">载入示例批次</button>
+            <button nz-button nzType="primary" (click)="startMerge()" [disabled]="!batchInput.trim()">
+              {{ mergeSession() ? '重试 / 合入批次' : '开始合流' }}
+            </button>
+          </div>
+          @if (store.workspace().mergeSessions.length > 0) {
+            <nz-divider></nz-divider>
+            <label class="field-label">合流会话</label>
+            <div class="session-list">
+              @for (session of store.workspace().mergeSessions; track session.id) {
+                <button
+                  class="session-row"
+                  [class.is-active]="session.id === store.activeMergeSessionId()"
+                  [disabled]="session.status !== 'pending'"
+                  (click)="store.selectMergeSession(session.id)"
+                >
+                  <strong>{{ session.label }}</strong>
+                  <small>{{ session.source }}</small>
+                  <nz-tag [nzColor]="session.status === 'applied' ? 'green' : session.status === 'cancelled' ? 'default' : 'orange'">
+                    {{ session.status === 'applied' ? '已应用' : session.status === 'cancelled' ? '已放弃' : '待复核' }}
+                  </nz-tag>
+                </button>
+              }
+            </div>
+          }
+        </aside>
+
+        <main class="surface merge-review-panel">
+          @if (mergeSession(); as session) {
+            <div class="merge-header">
+              <div>
+                <span class="overline">REVIEW BEFORE MERGE</span>
+                <h2>并列复核 · {{ session.label }}</h2>
+                <p>来源：{{ session.source }}　目标稿：{{ store.activeVersion().name }}</p>
+              </div>
+              <div class="merge-header-actions">
+                <button nz-button nzDanger (click)="store.cancelMerge()">放弃合流</button>
+                <button nz-button nzType="primary" (click)="store.applyMerge()">应用所选并写回当前稿</button>
+              </div>
+            </div>
+            <nz-alert
+              class="merge-alert"
+              nzType="info"
+              nzShowIcon
+              nzMessage="选定来源前不覆盖当前稿"
+              nzDescription="默认全部保留当前稿；只有选“取宋刻本”的异文会改正文，真改字自动转待复核并标注来源。"
+            ></nz-alert>
+
+            @if (session.items.length === 0) {
+              <nz-empty class="merge-empty" nzNotFoundContent="正文与候选标注均与当前稿一致，可直接放弃合流"></nz-empty>
+            }
+
+            @for (group of mergeGroups(); track group.line) {
+              <article class="merge-group">
+                <header class="merge-group-head">
+                  @if (group.line >= 0) { <strong>第 {{ group.line + 1 }} 句</strong> } @else { <strong>句间关系</strong> }
+                  @if (group.line >= 0) {
+                    <div class="line-choice">
+                      <button nz-button nzSize="small" (click)="chooseLine(group.line, 'current')">全句保留当前稿</button>
+                      <button nz-button nzSize="small" (click)="chooseLine(group.line, 'incoming')">全句取宋刻本</button>
+                    </div>
+                  }
+                </header>
+                <div class="merge-items">
+                  @for (item of group.items; track item.id) {
+                    <div class="merge-item" [class.kind-text]="item.kind === 'text'" [class.kind-mark]="item.kind === 'mark'" [class.kind-anti]="item.kind === 'antithesis'">
+                      <div class="merge-item-main">
+                        @switch (item.kind) {
+                          @case ('text') {
+                            <nz-tag nzColor="red">异文</nz-tag>
+                            <span class="variant-pair">
+                              <span class="variant-current">{{ item.current || '（无）' }}</span>
+                              <i>→</i>
+                              <span class="variant-incoming">{{ item.incoming || '（删）' }}</span>
+                            </span>
+                            <small>第 {{ (item.position ?? 0) + 1 }} 字起</small>
+                          }
+                          @case ('mark') {
+                            <nz-tag nzColor="blue">候选 · {{ fieldLabel(item.field || '') }}</nz-tag>
+                            <span class="variant-pair">
+                              <span class="variant-current">{{ item.currentValue }}</span>
+                              <i>→</i>
+                              <span class="variant-incoming">{{ item.incomingValue }}</span>
+                            </span>
+                            <small>“{{ item.char }}”第 {{ (item.position ?? 0) + 1 }} 字{{ item.candidate?.basis ? ' · ' + item.candidate?.basis : '' }}</small>
+                          }
+                          @case ('antithesis') {
+                            <nz-tag nzColor="purple">候选对仗</nz-tag>
+                            <span>第 {{ (item.pair?.leftLine ?? 0) + 1 }} 句 ↔ 第 {{ (item.pair?.rightLine ?? 0) + 1 }} 句</span>
+                            <small>{{ item.pair?.note }}</small>
+                          }
+                        }
+                      </div>
+                      <div class="merge-item-choice">
+                        <button
+                          nz-button
+                          [nzType]="item.choice === 'current' ? 'primary' : 'default'"
+                          (click)="choose(item, 'current')"
+                        >保留当前稿</button>
+                        <button
+                          nz-button
+                          [nzType]="item.choice === 'incoming' ? 'primary' : 'default'"
+                          (click)="choose(item, 'incoming')"
+                        >取宋刻本</button>
+                      </div>
+                    </div>
+                  }
+                </div>
+              </article>
+            }
+          } @else {
+            <nz-empty
+              class="merge-empty"
+              nzNotFoundContent="尚无进行中的合流会话"
+              nzNotFoundDescription="从左侧粘贴或载入校勘员批次，开始合流。"
+            ></nz-empty>
+          }
+        </main>
       </section>
     </nz-tab>
 
@@ -304,7 +466,18 @@
         <aside class="surface export-panel">
           <span class="overline">PROOFREAD EXPORT</span>
           <h2>导出校对稿</h2>
-          <p>包含逐字平仄、韵组、判断依据、出律提示与对仗记录。</p>
+          <p>包含逐字平仄、韵组、判断依据、出律提示、合流待复核清单与对仗记录。</p>
+          @if (pendingCount > 0) {
+            <nz-alert
+              class="merge-alert"
+              nzType="warning"
+              nzShowIcon
+              [nzMessage]="pendingCount + ' 字合流待复核'"
+              [nzDescription]="'来源：' + pendingSources.join('、')"
+            ></nz-alert>
+            <button nz-button nzBlock class="clear-review-btn" (click)="store.clearAllReviews()">全部确认（清除待复核标记）</button>
+            <nz-divider></nz-divider>
+          }
           <button nz-button nzType="primary" nzSize="large" nzBlock (click)="store.downloadProofreadCopy()">导出 Markdown 校对稿</button>
           <nz-divider></nz-divider>
           <label class="field-label">当前底本说明</label>

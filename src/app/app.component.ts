@@ -14,6 +14,26 @@ import { NzTabsModule } from 'ng-zorro-antd/tabs';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzToolTipModule } from 'ng-zorro-antd/tooltip';
 import { METER_TEMPLATES, PoetryStoreService } from './services/poetry-store.service';
+import type { MergeItem } from './models/poem.models';
+
+const SAMPLE_BATCH = JSON.stringify(
+  {
+    batchId: 'song-shuke-chunxiao-01',
+    source: '宋蜀刻本《孟浩然诗集》',
+    name: '宋刻本 · 春晓批校',
+    lines: ['春眠不觉晓，', '处处闻鸣鸟。', '夜来风雨声，', '花落知多少。'],
+    marks: [
+      { line: 0, position: 4, char: '晓', tone: '仄', rhyme: '上声十七筱', pauseAfter: false, basis: '宋本朱笔旁注', note: '晓字圈点，校为仄声' },
+      { line: 1, position: 2, char: '鸣', tone: '平', rhyme: '', pauseAfter: false, basis: '宋本作“鸣”', note: '异文：啼→鸣' },
+      { line: 1, position: 4, char: '鸟', tone: '仄', rhyme: '上声十七筱', pauseAfter: true, basis: '宋本圈发', note: '句读小停' },
+      { line: 2, position: 2, char: '雨', tone: '仄', rhyme: '', pauseAfter: true, basis: '宋本句读', note: '风雨之间一顿' },
+      { line: 3, position: 4, char: '少', tone: '仄', rhyme: '上声十七筱', pauseAfter: false, basis: '宋本朱笔', note: '' },
+    ],
+    antithesis: [{ leftLine: 0, rightLine: 3, note: '宋本批：起结相应，意境对仗。' }],
+  },
+  null,
+  2,
+);
 
 @Component({
   selector: 'app-root',
@@ -42,6 +62,9 @@ export class AppComponent {
   readonly templates = METER_TEMPLATES;
   readonly selectedCell = computed(() => this.store.selectedCell());
 
+  batchInput = '';
+  readonly sampleBatch = SAMPLE_BATCH;
+
   get totalErrors(): number {
     return this.store.issues().filter((issue) => issue.level === 'error').length;
   }
@@ -54,6 +77,50 @@ export class AppComponent {
     const cells = this.store.analysis().flatMap((line) => line.cells);
     if (!cells.length) return 0;
     return Math.round((cells.filter((cell) => cell.actual !== '?').length / cells.length) * 100);
+  }
+
+  get pendingCount(): number {
+    return this.store.pendingReviewCount().count;
+  }
+
+  get pendingSources(): string[] {
+    return this.store.pendingReviewCount().sources;
+  }
+
+  readonly mergeSession = computed(() => this.store.activeMergeSession());
+
+  readonly mergeGroups = computed(() => {
+    const session = this.mergeSession();
+    if (!session) return [];
+    const byLine = new Map<number, MergeItem[]>();
+    for (const item of session.items) {
+      const line = item.line ?? -1;
+      byLine.set(line, [...(byLine.get(line) ?? []), item]);
+    }
+    return [...byLine.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([line, items]) => ({ line, items }));
+  });
+
+  startMerge(): void {
+    this.store.startMerge(this.batchInput);
+  }
+
+  loadSampleBatch(): void {
+    this.batchInput = SAMPLE_BATCH;
+    this.store.mergeError.set('');
+  }
+
+  choose(item: MergeItem, choice: 'current' | 'incoming'): void {
+    this.store.setMergeChoice(item.id, choice);
+  }
+
+  chooseLine(line: number, choice: 'current' | 'incoming'): void {
+    this.store.setMergeChoicesForLine(line, choice);
+  }
+
+  fieldLabel(field: string): string {
+    return field === 'tone' ? '平仄' : field === 'rhyme' ? '韵组' : '停顿';
   }
 
   setTone(tone: '平' | '仄' | '中' | '?'): void {
