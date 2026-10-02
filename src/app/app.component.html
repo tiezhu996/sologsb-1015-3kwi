@@ -41,11 +41,12 @@
     <div class="issue-pills">
       <nz-tag nzColor="error">{{ totalErrors }} 处出律</nz-tag>
       <nz-tag nzColor="warning">{{ totalWarnings }} 处待核</nz-tag>
+      <nz-tag nzColor="gold">{{ store.pendingCount() }} 字待复核</nz-tag>
       <nz-tag>{{ store.differences().length }} 处异文</nz-tag>
     </div>
   </section>
 
-  <nz-tabset nzType="line" class="main-tabs">
+  <nz-tabset nzType="line" class="main-tabs" [(nzSelectedIndex)]="topTabIndex">
     <nz-tab nzTitle="逐字标注">
       <div class="meter-workbench">
         <aside class="source-panel surface">
@@ -106,6 +107,7 @@
                       [class.is-variant]="cell.status === 'variant'"
                       [class.is-error]="cell.status === 'error'"
                       [class.is-unknown]="cell.status === 'unknown'"
+                      [class.is-pending]="cell.mark.status === 'pending'"
                       nz-tooltip
                       [nzTooltipTitle]="cell.message"
                       (click)="store.selectCell(line.index, cell.position)"
@@ -115,6 +117,7 @@
                       <span class="mark-row">
                         @if (cell.mark.rhyme) { <em>{{ cell.mark.rhyme }}</em> }
                         @if (cell.mark.pauseAfter) { <i>顿</i> }
+                        @if (cell.mark.status === 'pending') { <i class="pending-flag">复</i> }
                       </span>
                     </button>
                   }
@@ -140,12 +143,35 @@
           </div>
           @if (selectedCell(); as cell) {
             <div class="selected-char-card">
-              <span class="large-hanzi">{{ cell.char }}</span>
+              <span class="large-hanzi" [class.is-pending-bg]="cell.mark.status === 'pending'">{{ cell.char }}</span>
               <div>
                 <strong>第 {{ store.selectedLine() + 1 }} 句 · 第 {{ cell.position + 1 }} 字</strong>
                 <p>{{ cell.message }}</p>
               </div>
             </div>
+            @if (cell.mark.status === 'pending') {
+              <div class="pending-card">
+                <div class="pending-head">
+                  <nz-tag nzColor="gold">待复核</nz-tag>
+                  <span>来源：{{ cell.mark.originSource ?? '批次候选' }}</span>
+                </div>
+                @if (cell.mark.candidate; as candidate) {
+                  <p class="candidate-line">
+                    候选：平仄 <b>{{ candidate.tone === '?' ? '未定' : candidate.tone }}</b>
+                    ｜韵组 <b>{{ candidate.rhyme || '—' }}</b>
+                    ｜停顿 <b>{{ candidate.pauseAfter ? '有' : '无' }}</b>
+                  </p>
+                  @if (candidate.basis) { <p class="candidate-basis">依据：{{ candidate.basis }}</p> }
+                  @if (candidate.note) { <p class="candidate-basis">批注：{{ candidate.note }}</p> }
+                } @else {
+                  <p class="candidate-basis">该字由来源正文带入，来源未附标注，请直接判断。</p>
+                }
+                <div class="pending-actions">
+                  <button nz-button nzSize="small" nzType="primary" [disabled]="!cell.mark.candidate" (click)="store.adoptCandidate()">采用候选</button>
+                  <button nz-button nzSize="small" (click)="store.confirmAsIs()">按当前值确认</button>
+                </div>
+              </div>
+            }
             <label class="field-label">平仄</label>
             <div class="tone-buttons">
               <button nz-button [nzType]="cell.mark.tone === '平' ? 'primary' : 'default'" (click)="setTone('平')">平</button>
@@ -253,7 +279,16 @@
           <button nz-button (click)="store.previousDifference()">上一处异文</button>
           <button nz-button nzType="primary" (click)="store.nextDifference()">下一处异文</button>
           <nz-tag nzColor="error">{{ store.differences().length }} 处差异</nz-tag>
+          <nz-tag nzColor="gold">{{ store.pendingCount() }} 字待复核</nz-tag>
         </div>
+        @if (store.pendingBySource().length) {
+          <div class="pending-sources-bar">
+            <span>待复核来源：</span>
+            @for (group of store.pendingBySource(); track group.source) {
+              <nz-tag nzColor="gold">{{ group.source }} × {{ group.count }}</nz-tag>
+            }
+          </div>
+        }
         @if (store.baselineVersion(); as baseline) {
           <div class="compare-headings">
             <div><span>底本</span><strong>{{ baseline.name }}</strong><small>{{ baseline.source }}</small></div>
@@ -267,9 +302,13 @@
                 [class.is-current]="item.index === store.currentDiffIndex()"
                 [class.has-left]="!item.left"
                 [class.has-right]="!item.right"
+                [class.is-pending-diff]="item.pending"
+                nz-tooltip
+                [nzTooltipTitle]="item.pending ? ('待复核 · 来源：' + item.originSource + (item.candidate && item.candidate.tone !== '?' ? '｜候选平仄：' + item.candidate.tone : '')) : null"
               >
                 <i>{{ item.left || '□' }}</i>
                 <b>{{ item.right || '□' }}</b>
+                @if (item.pending) { <em class="pending-dot">复</em> }
               </span>
             }
           </div>
@@ -280,6 +319,232 @@
           <nz-empty nzNotFoundContent="请选择一份异文底本"></nz-empty>
         }
       </section>
+    </nz-tab>
+
+    <nz-tab nzTitle="宋刻本合流">
+      <nz-tabset class="merge-subtabs" [(nzSelectedIndex)]="activeMergeTab" [nzLinkRouter]="false">
+        <nz-tab nzTitle="导入批次">
+          <section class="surface import-panel">
+            <div class="section-title">
+              <div><span class="overline">BATCH IMPORT</span><h2>导入宋刻本逐字标注批次</h2></div>
+              <button nz-button nzSize="small" (click)="loadExampleBatch()">填入示例批次</button>
+            </div>
+            <div class="import-body">
+              <nz-alert
+                nzType="info"
+                nzShowIcon
+                nzMessage="合流规则"
+                nzDescription="版本快照只取来源正文；平仄、韵组、停顿与对仗建议先作候选。正文改动后旧位置标注按对齐重算，仅真正改过的字转待复核；两边同改同一句并列保留，选定来源前不覆盖当前稿。"
+              ></nz-alert>
+              <label class="field-label">批次报文（JSON）</label>
+              <textarea
+                nz-input
+                class="import-textarea"
+                rows="14"
+                placeholder='{"sourceName":"宋蜀刻本","sourceRef":"卷三 · SN-001","text":"...\\n...","marks":{"0:4":{"tone":"仄","rhyme":"A"}},"antithesis":[{"leftLine":1,"rightLine":2,"note":"…"}]}'
+                [ngModel]="importJson()"
+                (ngModelChange)="importJson.set($event)"
+              ></textarea>
+              @if (importError()) {
+                <nz-alert class="import-error" nzType="error" nzShowIcon [nzMessage]="importError()"></nz-alert>
+              }
+              <div class="import-actions">
+                <button nz-button nzType="primary" nzSize="large" (click)="submitImport()">生成合流对照（不改动当前稿）</button>
+                <span>当前稿：{{ store.activeVersion().name }}</span>
+              </div>
+            </div>
+          </section>
+        </nz-tab>
+
+        <nz-tab [nzTitle]="'合流对照' + (store.mergePreview() ? '（' + store.mergePreview()!.conflicts + ' 冲突）' : '')">
+          @if (store.activeBatch(); as batch) {
+            @if (batch.targetVersionId !== store.activeVersion().id) {
+              <div class="merge-alert cross-version">
+                <nz-alert nzType="warning" nzShowIcon nzMessage="该批次属于另一版本" [nzDescription]="'批次目标版本 ID：' + batch.targetVersionId"></nz-alert>
+                <button nz-button nzSize="small" nzType="primary" (click)="store.selectVersion(batch.targetVersionId)">切换到目标版本</button>
+              </div>
+            }
+            @if (batch.status === 'failed') {
+              <nz-alert class="merge-alert" nzType="error" nzShowIcon nzMessage="上次合流失败，批次与已确认选择已保留" [nzDescription]="batch.lastError || '处理并列异文后可直接重试，不会重复生成批次。'"></nz-alert>
+            }
+            @if (store.mergePreview(); as preview) {
+              <section class="surface merge-review">
+                <div class="section-title">
+                  <div>
+                    <span class="overline">THREE-WAY MERGE</span>
+                    <h2>{{ batch.sourceName }} 合流对照</h2>
+                    <small>{{ batch.sourceRef }}</small>
+                  </div>
+                  <div class="merge-stats">
+                    <nz-tag nzColor="default">一致 {{ preview.equal }}</nz-tag>
+                    <nz-tag nzColor="blue">来源独改 {{ preview.sourceOnly }}</nz-tag>
+                    <nz-tag nzColor="purple">当前稿独改 {{ preview.draftOnly }}</nz-tag>
+                    <nz-tag nzColor="error">两边同改 {{ preview.conflicts }}</nz-tag>
+                    <nz-tag nzColor="gold">预计 {{ preview.pendingCount }} 字转待复核</nz-tag>
+                  </div>
+                </div>
+
+                <div class="merge-lines">
+                  @for (line of preview.lines; track line.rowKey) {
+                    <article class="merge-line" [class.is-conflict]="line.state === 'conflict'" [class.is-source]="line.state === 'source'" [class.is-draft]="line.state === 'draft'">
+                      <div class="merge-line-head">
+                        <strong>对照行 {{ line.index + 1 }}</strong>
+                        @switch (line.state) {
+                          @case ('conflict') { <nz-tag nzColor="error">两边同改 · 并列保留</nz-tag> }
+                          @case ('source') { <nz-tag nzColor="blue">仅来源改动</nz-tag> }
+                          @case ('draft') { <nz-tag nzColor="purple">仅当前稿改动 · 照旧</nz-tag> }
+                          @default { <nz-tag>一致</nz-tag> }
+                        }
+                        @if (line.state === 'conflict') {
+                          <div class="choice-buttons">
+                            <button nz-button nzSize="small" [nzType]="line.choice === 'source' ? 'primary' : 'default'" (click)="choose(line.rowKey, 'source')">采用宋本句</button>
+                            <button nz-button nzSize="small" [nzType]="line.choice === 'draft' ? 'primary' : 'default'" (click)="choose(line.rowKey, 'draft')">保留当前稿句</button>
+                          </div>
+                        }
+                      </div>
+                      <div class="merge-cells">
+                        <div class="merge-row merge-base">
+                          <span class="merge-row-label">导入快照</span>
+                          @for (cell of line.cells; track cell.key) {
+                            <span class="merge-cell">{{ cell.baseChar || '·' }}</span>
+                          }
+                        </div>
+                        <div class="merge-row merge-source">
+                          <span class="merge-row-label">宋刻本</span>
+                          @for (cell of line.cells; track cell.key) {
+                            <span
+                              class="merge-cell"
+                              [class.cell-source]="cell.status === 'source' || cell.status === 'source-insert'"
+                              [class.cell-conflict]="cell.conflict"
+                              [class.cell-chosen]="cell.conflict && line.choice === 'source'"
+                              nz-tooltip
+                              [nzTooltipTitle]="cell.candidate ? ('候选：' + (cell.candidate.tone || '未定') + (cell.candidate.rhyme ? '｜韵' + cell.candidate.rhyme : '') + (cell.candidate.basis ? '｜' + cell.candidate.basis : '')) : '来源无候选标注'"
+                            >{{ cell.sourceChar || '□' }}</span>
+                          }
+                        </div>
+                        <div class="merge-row merge-draft">
+                          <span class="merge-row-label">当前稿</span>
+                          @for (cell of line.cells; track cell.key) {
+                            <span
+                              class="merge-cell"
+                              [class.cell-draft]="cell.status === 'draft' || cell.status === 'draft-insert'"
+                              [class.cell-conflict]="cell.conflict"
+                              [class.cell-chosen]="cell.conflict && line.choice === 'draft'"
+                            >{{ cell.draftChar || '□' }}</span>
+                          }
+                        </div>
+                      </div>
+                    </article>
+                  }
+                </div>
+
+                @if (batch.antithesisSuggestions.length) {
+                  <div class="merge-suggestions">
+                    <span class="overline">ANTITHESIS CANDIDATES</span>
+                    <h3>对仗建议（合流前逐项决定，默认不写入）</h3>
+                    @for (sug of batch.antithesisSuggestions; track sug.id) {
+                      <div class="sug-row">
+                        <div>
+                          <strong>第 {{ sug.leftLine + 1 }} 句 ↔ 第 {{ sug.rightLine + 1 }} 句</strong>
+                          <p>{{ sug.note }}</p>
+                        </div>
+                        <div class="choice-buttons">
+                          <button nz-button nzSize="small" [nzType]="sug.decision === 'accept' ? 'primary' : 'default'" (click)="store.setSuggestionDecision(sug.id, 'accept')">接受</button>
+                          <button nz-button nzSize="small" [nzType]="sug.decision === 'reject' ? 'primary' : 'default'" (click)="store.setSuggestionDecision(sug.id, 'reject')">拒绝</button>
+                        </div>
+                      </div>
+                    }
+                  </div>
+                }
+
+                <div class="merge-commitbar">
+                  <nz-alert
+                    nzType="warning"
+                    nzShowIcon
+                    nzMessage="选定来源前不会覆盖当前稿"
+                    nzDescription="合流成功后仅真正改过的字转待复核，平仄/韵组/停顿候选可在逐字标注页逐条采用；整次合流可撤销回到合流前。"
+                  ></nz-alert>
+                  <button
+                    nz-button
+                    nzType="primary"
+                    nzSize="large"
+                    [disabled]="!preview.ready"
+                    (click)="store.commitMerge()"
+                  >{{ preview.ready ? '执行合流' : ('还有 ' + preview.conflicts + ' 处冲突句未选来源') }}</button>
+                </div>
+              </section>
+            } @else if (batch.status === 'merged') {
+              <nz-alert class="merge-alert" nzType="success" nzShowIcon [nzMessage]="'批次「' + batch.sourceName + '」已合流（' + (batch.mergedAt | date: 'yyyy-MM-dd HH:mm') + '）'" nzDescription="如需再次对照，可在“批次记录”中查看；撤销可回到合流前。"></nz-alert>
+            }
+          } @else {
+            <nz-empty class="merge-empty" nzNotFoundContent="尚无活动批次，请先在“导入批次”中粘贴宋刻本逐字标注"></nz-empty>
+          }
+        </nz-tab>
+
+        <nz-tab nzTitle="批次记录">
+          <section class="surface batch-records">
+            <div class="section-title"><div><span class="overline">BATCH LEDGER</span><h2>已保留批次</h2></div></div>
+            @if (store.workspace().mergeBatches?.length) {
+              <div class="batch-list">
+                @for (batch of store.workspace().mergeBatches!; track batch.id) {
+                  <article class="batch-card" [class.is-active]="batch.id === store.workspace().activeBatchId">
+                    <div class="batch-head">
+                      <strong>{{ batch.sourceName }}</strong>
+                      @switch (batch.status) {
+                        @case ('merged') { <nz-tag nzColor="success">已合流</nz-tag> }
+                        @case ('failed') { <nz-tag nzColor="error">失败待重试</nz-tag> }
+                        @default { <nz-tag nzColor="processing">对照中</nz-tag> }
+                      }
+                    </div>
+                    <small>{{ batch.sourceRef || '未标注馆藏' }}</small>
+                    <p>{{ batch.sourceLines.length }} 行 · {{ markCount(batch.sourceMarks) }} 条候选标注 · {{ batch.antithesisSuggestions.length }} 条对仗建议</p>
+                    <em>{{ batch.createdAt | date: 'yyyy-MM-dd HH:mm' }}</em>
+                    @if (batch.lastError) { <p class="batch-error">{{ batch.lastError }}</p> }
+                    <div class="batch-actions">
+                      @if (batch.status !== 'merged') {
+                        <button nz-button nzSize="small" nzType="primary" (click)="store.selectBatch(batch.id); activeMergeTab.set(1)">打开对照 / 重试</button>
+                      } @else {
+                        <button nz-button nzSize="small" (click)="store.selectBatch(batch.id); activeMergeTab.set(1)">查看</button>
+                      }
+                    </div>
+                  </article>
+                }
+              </div>
+            } @else {
+              <nz-empty nzNotFoundContent="暂无批次"></nz-empty>
+            }
+          </section>
+        </nz-tab>
+
+        <nz-tab [nzTitle]="'待复核（' + store.pendingCount() + '）'">
+          <section class="surface pending-panel">
+            <div class="section-title">
+              <div><span class="overline">REVIEW QUEUE</span><h2>待复核异文</h2></div>
+              <div class="pending-source-tags">
+                @for (group of store.pendingBySource(); track group.source) {
+                  <nz-tag nzColor="gold">{{ group.source }} · {{ group.count }}</nz-tag>
+                }
+              </div>
+            </div>
+            @if (store.pendingReview().length) {
+              <div class="pending-grid">
+                @for (item of store.pendingReview(); track item.line + ':' + item.position) {
+                  <button class="pending-item" (click)="store.selectCell(item.line, item.position); topTabIndex.set(0)">
+                    <span class="pending-hanzi">{{ item.char }}</span>
+                    <span class="pending-meta">
+                      第 {{ item.line + 1 }} 句第 {{ item.position + 1 }} 字
+                      @if (item.candidate?.tone === '平' || item.candidate?.tone === '仄' || item.candidate?.tone === '中') { <em>候选 {{ item.candidate?.tone }}</em> }
+                    </span>
+                    <small>{{ item.source }}</small>
+                  </button>
+                }
+              </div>
+            } @else {
+              <nz-empty nzNotFoundContent="没有待复核字"></nz-empty>
+            }
+          </section>
+        </nz-tab>
+      </nz-tabset>
     </nz-tab>
 
     <nz-tab nzTitle="版本与导出">
@@ -305,6 +570,13 @@
           <span class="overline">PROOFREAD EXPORT</span>
           <h2>导出校对稿</h2>
           <p>包含逐字平仄、韵组、判断依据、出律提示与对仗记录。</p>
+          <nz-alert
+            class="export-pending"
+            [nzType]="store.pendingCount() ? 'warning' : 'success'"
+            nzShowIcon
+            [nzMessage]="store.pendingCount() ? store.pendingCount() + ' 字待复核，导出将逐条列出来源' : '当前无待复核字'"
+            [nzDescription]="pendingSourceSummary()"
+          ></nz-alert>
           <button nz-button nzType="primary" nzSize="large" nzBlock (click)="store.downloadProofreadCopy()">导出 Markdown 校对稿</button>
           <nz-divider></nz-divider>
           <label class="field-label">当前底本说明</label>

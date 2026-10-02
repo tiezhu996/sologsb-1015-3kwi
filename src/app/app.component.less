@@ -255,6 +255,89 @@ kbd { display: inline-grid; min-width: 21px; height: 21px; padding: 0 5px; place
 .export-panel p { margin-bottom: 18px; color: #737068; font-size: 12px; line-height: 1.7; }
 .toast { position: fixed; right: 28px; bottom: 28px; z-index: 100; padding: 11px 16px; border-radius: 8px; color: #fff; background: #345f52; box-shadow: 0 10px 30px rgba(42,68,58,.25); }
 
+/* 待复核 */
+.meter-character.is-pending { box-shadow: inset 0 0 0 2px #d4a02c; }
+.pending-flag { color: #b07c14; font-weight: 700; font-style: normal; }
+.large-hanzi.is-pending-bg { background: #c08a26; }
+.pending-card { margin-top: 12px; padding: 11px; border: 1px solid #e4cf99; border-radius: 9px; background: #fdf8ec; }
+.pending-head { display: flex; align-items: center; gap: 8px; }
+.pending-head span { color: #8a6d2f; font-size: 10px; }
+.candidate-line { margin: 8px 0 4px; color: #6b5a36; font-size: 11px; }
+.candidate-line b { color: #3d6d5e; }
+.candidate-basis { margin-top: 3px; color: #8a7d62; font-size: 10px; line-height: 1.6; }
+.pending-actions { display: flex; gap: 6px; margin-top: 10px; }
+.diff-char.is-pending-diff { box-shadow: inset 0 0 0 2px #d4a02c; }
+.pending-dot { position: absolute; top: 1px; right: 2px; color: #b07c14; font-size: 8px; font-style: normal; font-weight: 700; }
+.diff-char { position: relative; }
+.pending-sources-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: #fdf8ec; color: #8a6d2f; font-size: 11px; }
+.export-pending { margin-bottom: 14px; }
+
+/* 合流 */
+.merge-subtabs ::ng-deep .ant-tabs-nav { margin-bottom: 12px; }
+.import-panel { overflow: hidden; }
+.import-body { padding: 16px; display: grid; gap: 6px; }
+.import-textarea { font: 13px/1.7 Consolas, "Songti SC", serif; }
+.import-error { margin-top: 6px; }
+.import-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.import-actions span { color: #8a867b; font-size: 11px; }
+.merge-alert { margin-bottom: 12px; }
+.cross-version { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+.cross-version nz-alert { flex: 1; }
+.merge-empty { padding: 60px 0; }
+.merge-review { overflow: hidden; }
+.merge-stats { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+.merge-lines { padding: 12px; display: grid; gap: 10px; }
+.merge-line { padding: 11px 12px; border: 1px solid #e4dfd4; border-radius: 10px; background: #fcfbf7; }
+.merge-line.is-conflict { border-color: #d9a39e; background: #fdf3f1; }
+.merge-line.is-source { border-color: #b6cddd; background: #f3f8fc; }
+.merge-line.is-draft { border-color: #cbbde0; background: #f8f5fc; }
+.merge-line-head { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+.merge-line-head strong { font-size: 12px; }
+.choice-buttons { margin-left: auto; display: flex; gap: 6px; }
+.merge-cells { display: grid; gap: 5px; }
+.merge-row { display: flex; align-items: center; gap: 6px; }
+.merge-row-label { width: 64px; flex: 0 0 64px; color: #969085; font-size: 10px; text-align: right; }
+.merge-cell {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font: 20px/1 "Songti SC", serif;
+  color: #6f6a60;
+  background: transparent;
+}
+.merge-base .merge-cell { color: #b3ada2; }
+.cell-source { background: #e5f0f9; border-color: #bcd7ea; color: #1f4d6b; }
+.cell-draft { background: #f0e9f8; border-color: #d3c4e6; color: #553b76; }
+.cell-conflict { background: #fbe6e2; border-color: #ddaaa4; color: #8f342c; font-weight: 700; }
+.cell-chosen { box-shadow: 0 0 0 2px #345f52; }
+.merge-suggestions { margin: 4px 14px 12px; padding: 12px; border-top: 1px dashed #e0dbd0; }
+.merge-suggestions h3 { margin: 4px 0 10px; font-size: 13px; }
+.sug-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border: 1px solid #e7e2d7; border-radius: 8px; background: #fbfaf6; margin-bottom: 7px; }
+.sug-row p { margin-top: 4px; color: #837e73; font-size: 11px; }
+.merge-commitbar { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center; padding: 14px 16px; border-top: 1px solid #e9e5dc; background: #f7f5ef; }
+.batch-records { overflow: hidden; }
+.batch-list { padding: 12px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.batch-card { padding: 13px; border: 1px solid #e0dbd0; border-radius: 10px; background: #fcfbf7; }
+.batch-card.is-active { border-color: #345f52; box-shadow: 0 0 0 2px rgba(52,95,82,.12); }
+.batch-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.batch-card small, .batch-card em { display: block; color: #948e83; font-size: 9px; font-style: normal; }
+.batch-card p { margin: 8px 0; color: #6f6a60; font-size: 11px; line-height: 1.6; }
+.batch-error { color: #a0463e; }
+.batch-actions { margin-top: 8px; }
+.pending-panel { overflow: hidden; }
+.pending-source-tags { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+.pending-grid { padding: 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 9px; }
+.pending-item { display: grid; grid-template-columns: auto 1fr; gap: 3px 11px; align-items: center; padding: 10px 12px; text-align: left; border: 1px solid #e4cf99; border-radius: 9px; background: #fdf8ec; cursor: pointer; }
+.pending-item:hover { filter: brightness(.98); }
+.pending-hanzi { grid-row: span 2; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 8px; background: #c08a26; color: #fff; font: 24px/1 "Songti SC", serif; }
+.pending-meta { font-size: 11px; color: #6b5a36; }
+.pending-meta em { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 5px; background: #e7d9b5; color: #5e4d24; font-style: normal; font-size: 9px; }
+.pending-item small { color: #9a8256; font-size: 9px; }
+
 @media (max-width: 1280px) {
   .app-header { grid-template-columns: 1fr auto; }
   .header-status { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; padding-bottom: 10px; }
@@ -276,6 +359,8 @@ kbd { display: inline-grid; min-width: 21px; height: 21px; padding: 0 5px; place
   .meter-panel { order: 1; overflow-x: auto; }
   .inspector-panel { order: 3; grid-template-columns: 1fr; }
   .audit-layout, .version-layout { grid-template-columns: 1fr; }
-  .version-grid { grid-template-columns: repeat(2, 1fr); }
+  .version-grid, .batch-list { grid-template-columns: repeat(2, 1fr); }
+  .merge-commitbar { grid-template-columns: 1fr; }
+  .merge-stats, .pending-source-tags { justify-content: flex-start; }
   .compare-toolbar { flex-wrap: wrap; }
 }

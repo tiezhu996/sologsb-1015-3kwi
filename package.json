@@ -6,7 +6,10 @@
     "start": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "verify:merge": "esbuild scripts/verify-merge.ts --bundle --platform=node --format=esm --outfile=dist/verify-merge.mjs && node dist/verify-merge.mjs",
+    "verify:store": "esbuild scripts/verify-store.ts --bundle --platform=node --format=esm --outfile=dist/verify-store.mjs && node dist/verify-store.mjs",
+    "verify": "npm run verify:merge && npm run verify:store"
   },
   "private": true,
   "dependencies": {

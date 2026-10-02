@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, HostListener, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { NzAlertModule } from 'ng-zorro-antd/alert';
@@ -13,7 +13,25 @@ import { NzSwitchModule } from 'ng-zorro-antd/switch';
 import { NzTabsModule } from 'ng-zorro-antd/tabs';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzToolTipModule } from 'ng-zorro-antd/tooltip';
-import { METER_TEMPLATES, PoetryStoreService } from './services/poetry-store.service';
+import { METER_TEMPLATES, PoetryStoreService, type BatchImportPayload } from './services/poetry-store.service';
+import type { CandidateMark, LineChoice } from './models/poem.models';
+
+/** 示例批次：来源正文与当前稿仅第三句不同（“夜阑”异文），格律标注与对仗均为候选 */
+const EXAMPLE_BATCH = `{
+  "sourceName": "宋蜀刻本（示例）",
+  "sourceRef": "宋蜀刻本《孟浩然诗集》卷三 · 批次 SN-001",
+  "text": "春眠不觉晓，\\n处处闻啼鸟。\\n夜阑风雨声，\\n花落知多少。",
+  "marks": {
+    "0:4": { "tone": "仄", "rhyme": "A", "pauseAfter": false, "basis": "刻本朱点", "note": "韵脚候选" },
+    "1:4": { "tone": "仄", "rhyme": "A", "pauseAfter": false, "basis": "刻本朱点", "note": "韵脚候选" },
+    "2:1": { "tone": "平", "rhyme": "", "pauseAfter": false, "basis": "《广韵》", "note": "阑，平声寒韵" },
+    "2:4": { "tone": "平", "rhyme": "A", "pauseAfter": false, "basis": "刻本朱点", "note": "韵脚候选" },
+    "3:4": { "tone": "仄", "rhyme": "A", "pauseAfter": false, "basis": "刻本朱点", "note": "韵脚候选" }
+  },
+  "antithesis": [
+    { "leftLine": 1, "rightLine": 2, "note": "刻本批点：次联“闻啼鸟／风雨声”属对候选" }
+  ]
+}`;
 
 @Component({
   selector: 'app-root',
@@ -41,6 +59,11 @@ export class AppComponent {
   readonly store = inject(PoetryStoreService);
   readonly templates = METER_TEMPLATES;
   readonly selectedCell = computed(() => this.store.selectedCell());
+
+  readonly importJson = signal('');
+  readonly importError = signal('');
+  readonly activeMergeTab = signal(0);
+  readonly topTabIndex = signal(0);
 
   get totalErrors(): number {
     return this.store.issues().filter((issue) => issue.level === 'error').length;
@@ -70,6 +93,53 @@ export class AppComponent {
 
   trackTemplate(index: number, item: (typeof METER_TEMPLATES)[number]): string {
     return item.id;
+  }
+
+  // ---------- 批次导入 ----------
+
+  loadExampleBatch(): void {
+    this.importJson.set(EXAMPLE_BATCH);
+    this.importError.set('');
+  }
+
+  submitImport(): void {
+    const raw = this.importJson().trim();
+    if (!raw) {
+      this.importError.set('请粘贴宋刻本逐字标注批次（JSON）');
+      return;
+    }
+    let payload: BatchImportPayload;
+    try {
+      payload = JSON.parse(raw) as BatchImportPayload;
+    } catch (error) {
+      this.importError.set(`JSON 解析失败：${(error as Error).message}`);
+      return;
+    }
+    if (!payload.sourceName || !payload.text) {
+      this.importError.set('批次至少需要 sourceName（来源名）与 text（来源正文，\\n 分行）');
+      return;
+    }
+    const result = this.store.importBatch(payload);
+    if (!result.ok) {
+      this.importError.set(result.error ?? '导入失败');
+      return;
+    }
+    this.importError.set('');
+    this.importJson.set('');
+    this.activeMergeTab.set(1);
+  }
+
+  choose(rowKey: string, value: LineChoice): void {
+    this.store.chooseConflict(rowKey, value);
+  }
+
+  pendingSourceSummary(): string {
+    const groups = this.store.pendingBySource();
+    return groups.length ? groups.map((g) => `${g.source}（${g.count}字）`).join('、') : '';
+  }
+
+  markCount(marks: Record<string, CandidateMark>): number {
+    return Object.keys(marks).length;
   }
 
   @HostListener('document:keydown', ['$event'])
